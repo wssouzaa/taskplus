@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Task+ — Gerenciador & Desempenho</title>
   <style>
-    :root { --bg:#f6f6f6; --card:#fff; --text:#111; --muted:#6b7280; --border:#e5e7eb; --radius:16px; }
+    :root { --bg:#f6f6f6; --card:#fff; --text:#111; --muted:#6b7280; --border:#e5e7eb; --radius:16px; --ring:#2563eb; }
     *{ box-sizing: border-box; } body{ margin:0; background:var(--bg); color:var(--text); font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     .container{ max-width: 1100px; margin: 0 auto; padding: 24px;}
     .card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 1px 2px rgba(0,0,0,.04); padding:16px; }
@@ -14,9 +14,12 @@
     .btn:hover{ box-shadow:0 2px 6px rgba(0,0,0,.06); }
     .input,.select{ border:1px solid var(--border); border-radius:12px; padding:8px 10px; }
     .title{ font-weight:800; font-size:24px; } .muted{ color:var(--muted); font-size:12px; }
-    .list{ display:grid; gap:8px; } .item{ border:1px solid var(--border); border-radius:12px; padding:12px; display:flex; align-items:center; justify-content:space-between; }
-    .strike{ text-decoration:line-through; color:#9ca3af; } .kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
-    .fields{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; } .chart{ height:280px; }
+    .list{ display:grid; gap:8px; } .item{ border:1px solid var(--border); border-radius:12px; padding:12px; display:flex; align-items:center; justify-content:space-between; transition: box-shadow .2s, outline .2s; }
+    .strike{ text-decoration:line-through; color:#9ca3af; }
+    .kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
+    .fields{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+    .chart{ height:280px; }
+    .ring { outline: 3px solid var(--ring); }
   </style>
 </head>
 <body>
@@ -28,6 +31,23 @@
         <label class="btn">⬆️ Importar CSV <input id="importCsvInput" type="file" accept=".csv" style="display:none"></label>
       </div>
     </header>
+
+    <!-- Nova tarefa no topo -->
+    <section class="card">
+      <h2 style="margin:0 0 8px 0;font-size:18px;">➕ Nova tarefa</h2>
+      <div class="fields">
+        <input id="title" class="input" placeholder="Título" />
+        <input id="category" class="input" placeholder="Categoria" />
+        <input id="due" class="input" type="date" />
+        <select id="type" class="select">
+          <option value="daily">Diária</option><option value="single">Pontual</option>
+          <option value="weekly">Semanal</option><option value="monthly">Mensal</option>
+        </select>
+        <input id="minutes" class="input" type="number" min="5" step="5" value="30" />
+        <input id="remindAt" class="input" type="datetime-local" />
+      </div>
+      <div class="row" style="margin-top:8px;"><button id="addBtn" class="btn">💾 Adicionar</button></div>
+    </section>
 
     <section class="kpis">
       <div class="card">
@@ -79,27 +99,12 @@
     </section>
 
     <section class="card">
-      <h2 style="margin:0 0 8px 0;font-size:18px;">➕ Nova tarefa</h2>
-      <div class="fields">
-        <input id="title" class="input" placeholder="Título" />
-        <input id="category" class="input" placeholder="Categoria" />
-        <input id="due" class="input" type="date" />
-        <select id="type" class="select">
-          <option value="daily">Diária</option><option value="single">Pontual</option>
-          <option value="weekly">Semanal</option><option value="monthly">Mensal</option>
-        </select>
-        <input id="minutes" class="input" type="number" min="5" step="5" value="30" />
-        <input id="remindAt" class="input" type="datetime-local" />
-      </div>
-      <div class="row" style="margin-top:8px;"><button id="addBtn" class="btn">💾 Adicionar</button></div>
-    </section>
-
-    <section class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px;">
         <h2 style="margin:0;font-size:18px;">Tarefas</h2><small class="muted"><span id="count">0</span> itens</small>
       </div>
       <div id="list" class="list"></div>
       <div id="empty" class="muted" style="text-align:center;padding:24px;display:none;">Sem tarefas no período selecionado.</div>
+      <div id="listEnd"></div>
     </section>
 
     <section class="card">
@@ -123,53 +128,63 @@
     const uid = () => Math.random().toString(36).slice(2,9);
 
     function toCSV(rows){
-      const headers = ["id","title","category","due","minutes","type","done","remindAt"];
+      const headers = ["id","title","category","due","minutes","type","done","remindAt","createdAt"];
       const lines = [headers.join(",")];
       rows.forEach(r=>{ lines.push(headers.map(h => (""+(r[h]??"")).replaceAll(",",";")).join(",")); });
-      return lines.join("\\n");
+      return lines.join("\n");
     }
     function fromCSV(text){
-      const [header, ...rest] = text.trim().split(/\\r?\\n/);
+      const [header, ...rest] = text.trim().split(/\r?\n/);
       const keys = header.split(",");
       return rest.map(line => {
         const vals = line.split(",");
         const o = {}; keys.forEach((k,i)=>o[k]=vals[i]);
         o.minutes = Number(o.minutes||0); o.done = String(o.done).toLowerCase()==="true";
+        if(o.createdAt) o.createdAt = Number(o.createdAt);
         return o;
       });
     }
+
     function canNotify(){ return "Notification" in window; }
     async function askPermission(){ if(!canNotify()) return "denied"; if(Notification.permission!=="granted"){ return await Notification.requestPermission(); } return "granted"; }
     function notify({title, body}){ if(canNotify() && Notification.permission==="granted"){ new Notification(title, { body }); } }
+
     function buildICS(times){
       const now = new Date(); const dtstamp = now.toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
       const makeEvent = (label, hhmm)=>{ const [h,m] = hhmm.split(":"); const start = new Date(); start.setHours(+h,+m,0,0);
         const DTSTART = start.toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
-        return ["BEGIN:VEVENT","UID:"+ (crypto.randomUUID?.()||uid()) +"@taskplus","DTSTAMP:"+dtstamp,"DTSTART:"+DTSTART,"RRULE:FREQ=DAILY","SUMMARY:Task+ — Lembrete: "+label,"END:VEVENT"].join("\\n"); };
-      const body = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Task+//PT-BR",""+makeEvent("Revisar prioridades", times.morning),""+makeEvent("Check-in", times.midday),""+makeEvent("Revisão do dia", times.night),"END:VCALENDAR"].join("\\n");
+        return ["BEGIN:VEVENT","UID:"+ (crypto.randomUUID?.()||uid()) +"@taskplus","DTSTAMP:"+dtstamp,"DTSTART:"+DTSTART,"RRULE:FREQ=DAILY","SUMMARY:Task+ — Lembrete: "+label,"END:VEVENT"].join("\n"); };
+      const body = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Task+//PT-BR",""+makeEvent("Revisar prioridades", times.morning),""+makeEvent("Check-in", times.midday),""+makeEvent("Revisão do dia", times.night),"END:VCALENDAR"].join("\n");
       return new Blob([body], { type:"text/calendar;charset=utf-8" });
     }
 
+    function addDaysISO(iso, n){ const d = new Date(iso); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+    function adjustRemindAtForDate(dueISO, remindAt){ if(!remindAt) return ""; const t = (remindAt.split('T')[1]||'').slice(0,5); if(!t) return ""; return `${dueISO}T${t}`; }
+    function cloneDailyTasks(base, days=30){ const arr = []; for(let i=1;i<=days;i++){ const due = addDaysISO(base.due, i); arr.push({ ...base, id: uid(), due, remindAt: adjustRemindAtForDate(due, base.remindAt), createdAt: Date.now()+i }); } return arr; }
+
     function App(){
       const [tasks, setTasks] = React.useState([]);
-      const [draft, setDraft] = React.useState({ id: uid(), title:"", category:"Geral", due: todayISO(), minutes:30, type:"daily", done:false, remindAt:"" });
+      const [draft, setDraft] = React.useState({ id: uid(), title:"", category:"Geral", due: todayISO(), minutes:30, type:"daily", done:false, remindAt:"", createdAt: 0 });
       const [filter, setFilter] = React.useState({ start: todayISO(), end: todayISO() });
       const [showDone, setShowDone] = React.useState(true);
       const [timer, setTimer] = React.useState({ running:false, seconds:25*60 });
       const [reminders, setReminders] = React.useState({ enabled:false, times:{ morning:"08:00", midday:"13:00", night:"20:30" }, lastFired:{} });
+      const [highlightId, setHighlightId] = React.useState(null);
 
       React.useEffect(()=>{ try{ setTasks(JSON.parse(localStorage.getItem("taskplus.tasks")||"[]")); }catch{} },[]);
       React.useEffect(()=> localStorage.setItem("taskplus.tasks", JSON.stringify(tasks)), [tasks]);
       React.useEffect(()=> localStorage.setItem("taskplus.reminders", JSON.stringify(reminders)), [reminders]);
 
       const filtered = React.useMemo(()=>{
-        const s = new Date(filter.start); const e = new Date(filter.end); e.setHours(23,59,59,999);
-        return tasks.filter(t=>{ const d=new Date(t.due); return d>=s && d<=e && (showDone || !t.done); }).sort((a,b)=> new Date(a.due)-new Date(b.due));
+        const s = filter.start ? new Date(filter.start) : null;
+        const e = filter.end ? new Date(filter.end) : null; if(e) e.setHours(23,59,59,999);
+        return tasks.filter(t=>{ const d=new Date(t.due); const okS=!s||d>=s; const okE=!e||d<=e; return okS&&okE&&(showDone||!t.done); })
+                    .sort((a,b)=> (new Date(a.due)-new Date(b.due)) || ((a.createdAt||0)-(b.createdAt||0)));
       },[tasks,filter,showDone]);
 
       const byDate = React.useMemo(()=>{
-        const map = new Map(); filtered.forEach(t=>{ const k=t.due; if(!map.has(k)) map.set(k,{date:k,total:0,done:0}); const row=map.get(k); row.total++; row.done += t.done?1:0; });
-        return [...map.values()].map(r=>({...r,pct:r.total?Math.round(100*r.done/r.total):0})).sort((a,b)=>a.date.localeCompare(b.date));
+        const m=new Map(); filtered.forEach(t=>{ const k=t.due; if(!m.has(k)) m.set(k,{date:k,total:0,done:0}); const r=m.get(k); r.total++; r.done+=t.done?1:0; });
+        return [...m.values()].map(r=>({...r,pct:r.total?Math.round(100*r.done/r.total):0})).sort((a,b)=>a.date.localeCompare(b.date));
       },[filtered]);
 
       const todayStats = React.useMemo(()=> byDate.find(r=>r.date===todayISO()) || {total:0,done:0,pct:0}, [byDate]);
@@ -177,37 +192,60 @@
       React.useEffect(()=>{ if(!timer.running) return; const id=setInterval(()=>{ setTimer(t=> t.seconds>0?({...t,seconds:t.seconds-1}):({...t,running:false})); },1000); return ()=>clearInterval(id); },[timer.running]);
       const minutes = String(Math.floor(timer.seconds/60)).padStart(2,"0"); const seconds = String(timer.seconds%60).padStart(2,"0");
 
-      function addTask(){ if(!draft.title.trim()) return; setTasks(p=>[...p,draft]); setDraft({ id: uid(), title:"", category:"Geral", due: draft.due, minutes:30, type:"daily", done:false, remindAt:"" }); }
-      function toggleDone(id){ setTasks(p=>p.map(t=>t.id===id?{...t,done:!t.done}:t)); }
-      function removeTask(id){ setTasks(p=>p.filter(t=>t.id!==id)); }
-      function clearDay(date){ setTasks(p=>p.filter(t=>t.due!==date)); }
+      function includeDate(d){
+        if(!filter.start||!filter.end){ setFilter({start:d,end:d}); return; }
+        const s=new Date(filter.start), e=new Date(filter.end); e.setHours(23,59,59,999); const nd=new Date(d);
+        if(nd<s||nd>e){ setFilter({start:d,end:d}); }
+      }
 
       function exportCSV(){ const blob = new Blob([toCSV(tasks)], { type:"text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`taskplus_${todayISO()}.csv`; a.click(); URL.revokeObjectURL(url); }
       function importCSV(file){ const reader = new FileReader(); reader.onload=()=>{ try{ setTasks(fromCSV(String(reader.result))); }catch{ alert("CSV inválido"); } }; reader.readAsText(file); }
-      function setRange(type){
-        if(type==="today"){ const iso=todayISO(); setFilter({start:iso,end:iso}); return;}
-        if(type==="week"){ const d=new Date(); const day=d.getDay(); const diffStart=(day+6)%7; const start=new Date(d); start.setDate(d.getDate()-diffStart); const end=new Date(start); end.setDate(start.getDate()+6); setFilter({start:start.toISOString().slice(0,10), end:end.toISOString().slice(0,10)}); return;}
-        if(type==="month"){ const d=new Date(); const start=new Date(d.getFullYear(),d.getMonth(),1); const end=new Date(d.getFullYear(),d.getMonth()+1,0); setFilter({start:start.toISOString().slice(0,10), end:end.toISOString().slice(0,10)}); return;}
+
+      function addTask(){
+        const title = document.getElementById("title").value.trim();
+        if(!title){ alert("Digite um título."); return; }
+        const t = {
+          id: uid(),
+          title,
+          category: document.getElementById("category").value || "Geral",
+          due: document.getElementById("due").value || todayISO(),
+          type: document.getElementById("type").value || "daily",
+          minutes: Number(document.getElementById("minutes").value || 30),
+          remindAt: document.getElementById("remindAt").value || "",
+          done: false,
+          createdAt: Date.now()
+        };
+        let toAdd=[t];
+        if(t.type==="daily"){ toAdd=[t, ...cloneDailyTasks(t, 30)]; }
+        setTasks(p=>[...p, ...toAdd]);
+        includeDate(t.due);
+        setHighlightId(t.id); setTimeout(()=> setHighlightId(null), 2000);
+        document.getElementById("title").value=""; document.getElementById("remindAt").value="";
+        setTimeout(()=> document.getElementById("listEnd").scrollIntoView({behavior:"smooth"}), 50);
       }
-      async function enableBrowserNotifications(){ const perm=await askPermission(); if(perm!=="granted"){ alert("Ative as notificações do navegador para receber lembretes."); return; } setReminders(r=>({...r,enabled:true})); notify({title:"Task+", body:"Notificações do Task+ ativadas."}); }
 
-      React.useEffect(()=>{ if(!reminders.enabled) return; const id=setInterval(()=>{ const now=new Date(); const hh=String(now.getHours()).padStart(2,"0"); const mm=String(now.getMinutes()).padStart(2,"0"); const keyNow=`${hh}:${mm}`; const dateKey=now.toISOString().slice(0,10); const labels={morning:"Revisar prioridades do dia",midday:"Check-in de meio-dia",night:"Revisão do dia"}; Object.entries(reminders.times).forEach(([k,time])=>{ const last=reminders.lastFired?.[k]; if(time===keyNow && last!==dateKey){ notify({title:"Task+", body:labels[k]}); setReminders(r=>({...r,lastFired:{...(r.lastFired||{}),[k]:dateKey}})); } }); },30000); return ()=>clearInterval(id); },[reminders.enabled,reminders.times,reminders.lastFired]);
+      function clearDay(date){ setTasks(p=>p.filter(t=>t.due!==date)); }
 
-      // Conectar controles DOM “fora” do React
       React.useEffect(()=>{
-        const start=document.getElementById("startDate"), end=document.getElementById("endDate"); start.value=filter.start; end.value=filter.end;
-        start.onchange=e=>setFilter(f=>({...f,start:e.target.value})); end.onchange=e=>setFilter(f=>({...f,end:e.target.value}));
+        document.getElementById("startDate").value=filter.start; document.getElementById("endDate").value=filter.end;
+        document.getElementById("startDate").onchange=e=>setFilter(f=>({...f,start:e.target.value}));
+        document.getElementById("endDate").onchange=e=>setFilter(f=>({...f,end:e.target.value}));
         document.getElementById("showDone").onchange=e=>setShowDone(e.target.checked);
-        document.getElementById("btnToday").onclick=()=>setRange("today"); document.getElementById("btnWeek").onclick=()=>setRange("week"); document.getElementById("btnMonth").onclick=()=>setRange("month");
+        document.getElementById("btnToday").onclick=()=>setFilter({start:todayISO(),end:todayISO()});
+        document.getElementById("btnWeek").onclick=()=>{ const d=new Date(); const day=d.getDay(); const dif=(day+6)%7; const s=new Date(d); s.setDate(d.getDate()-dif); const e=new Date(s); e.setDate(s.getDate()+6); setFilter({start:s.toISOString().slice(0,10),end:e.toISOString().slice(0,10)}); };
+        document.getElementById("btnMonth").onclick=()=>{ const d=new Date(); const s=new Date(d.getFullYear(),d.getMonth(),1); const e=new Date(d.getFullYear(),d.getMonth()+1,0); setFilter({start:s.toISOString().slice(0,10),end:e.toISOString().slice(0,10)}); };
         document.getElementById("exportCsvBtn").onclick=exportCSV;
         document.getElementById("importCsvInput").onchange=(e)=>{ const f=e.target.files?.[0]; if(f) importCSV(f); e.target.value=""; };
-        document.getElementById("remMorning").value=reminders.times.morning; document.getElementById("remMidday").value=reminders.times.midday; document.getElementById("remNight").value=reminders.times.night;
-        document.getElementById("enableNotif").onclick=enableBrowserNotifications; document.getElementById("exportIcs").onclick=()=>{ const blob=buildICS(reminders.times); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="taskplus_lembretes.ics"; a.click(); URL.revokeObjectURL(url); };
+        document.getElementById("enableNotif").onclick=async()=>{ const perm=await askPermission(); if(perm!=="granted"){ alert("Ative as notificações do navegador."); return; } setReminders(r=>({...r,enabled:true})); notify({title:"Task+",body:"Notificações do Task+ ativadas."}); };
+        document.getElementById("exportIcs").onclick=()=>{ const blob=buildICS(reminders.times); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="taskplus_lembretes.ics"; a.click(); URL.revokeObjectURL(url); };
         document.getElementById("notifWarn").style.display=("Notification" in window)?"none":"block";
         document.getElementById("due").value=todayISO();
-        document.getElementById("addBtn").onclick=()=>{ const title=document.getElementById("title").value.trim(); if(!title){ alert("Digite um título."); return; } const t={ id:uid(), title, category:document.getElementById("category").value||"Geral", due:document.getElementById("due").value||todayISO(), type:document.getElementById("type").value||"daily", minutes:Number(document.getElementById("minutes").value||30), remindAt:document.getElementById("remindAt").value||"", done:false }; setTasks(p=>[...p,t]); document.getElementById("title").value=""; document.getElementById("remindAt").value=""; };
-        document.getElementById("quickToday").onclick=()=>setRange("today"); document.getElementById("clearToday").onclick=()=>clearDay(todayISO());
-        document.getElementById("timerStart").onclick=()=>setTimer({running:true,seconds:25*60}); document.getElementById("timerPause").onclick=()=>setTimer(t=>({...t,running:false})); document.getElementById("timerReset").onclick=()=>setTimer({running:false,seconds:25*60});
+        document.getElementById("addBtn").onclick=addTask;
+        document.getElementById("quickToday").onclick=()=>setFilter({start:todayISO(),end:todayISO()});
+        document.getElementById("clearToday").onclick=()=>clearDay(todayISO());
+        document.getElementById("timerStart").onclick=()=>setTimer({running:true,seconds:25*60});
+        document.getElementById("timerPause").onclick=()=>setTimer(t=>({...t,running:false}));
+        document.getElementById("timerReset").onclick=()=>setTimer({running:false,seconds:25*60});
       },[filter,reminders]);
 
       React.useEffect(()=>{ document.getElementById("timerClock").textContent = minutes+":"+seconds; },[minutes,seconds]);
@@ -220,7 +258,7 @@
         const days=byDate.length; const avg=Math.round((byDate.reduce((a,b)=>a+b.pct,0)/(days||1))); document.getElementById("kpiPeriod").textContent=(avg||0)+"%"; document.getElementById("kpiDays").textContent=days;
         const empty=document.getElementById("empty"); const list=document.getElementById("list"); list.innerHTML="";
         if(!filtered.length){ empty.style.display="block"; } else { empty.style.display="none";
-          filtered.forEach(t=>{ const div=document.createElement("div"); div.className="item";
+          filtered.forEach(t=>{ const div=document.createElement("div"); div.className="item"+(t.id=== (highlightId||'__') ? " ring" : ""); // destaque 2s
             const left=document.createElement("div"); left.className="row";
             const toggle=document.createElement("button"); toggle.className="btn"; toggle.textContent=t.done?"✅":"⭕"; toggle.onclick=()=>setTasks(p=>p.map(x=>x.id===t.id?{...x,done:!x.done}:x));
             const content=document.createElement("div"); const title=document.createElement("div"); title.textContent=t.title; if(t.done) title.className="strike";
@@ -229,7 +267,7 @@
             const right=document.createElement("div"); const del=document.createElement("button"); del.className="btn"; del.textContent="🗑️ Excluir"; del.onclick=()=>setTasks(p=>p.filter(x=>x.id!==t.id)); right.appendChild(del);
             div.appendChild(left); div.appendChild(right); list.appendChild(div); });
         }
-      },[filtered,byDate,todayStats]);
+      },[filtered,byDate,todayStats,highlightId]);
 
       return React.createElement('div', null);
     }
